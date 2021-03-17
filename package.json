@@ -1,0 +1,17 @@
+{
+  "name": "beerpongportalsdiscord",
+  "version": "1.0.0",
+  "description": "BeerpongPortals Discord Bot",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "author": "Hendrik Vogel",
+  "license": "ISC",
+  "dependencies": {
+    "discord": "0.8.2",
+    "firebase": "8.0.2",
+    "firebase-admin": "^9.5.0"
+  }
+}
