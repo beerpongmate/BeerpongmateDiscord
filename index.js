@@ -40,15 +40,29 @@ server.listen(port, hostname, () => {
   console.log(`Server running at http://${hostname}:${port}/`);
 });
 
+const getChannel = () => {
+
+}
+
 doc.onSnapshot(docSnapshot => {
   docSnapshot.docChanges().forEach(change => {
     if (guild === null) return;
     if (change.type === 'added') {
-      const players = change.doc.get('players');
-      console.log();
       console.log('New Lobby: ', change.doc.data());
       guild.channels.create("Matchup", { reason: 'Players', type: "voice" })
-        .then(console.log)
+        .then(channel => {
+          channel.createInvite({ temporary: true })
+          .then(invite => {
+            console.log(`Created an invite with a code of ${invite.code} and url ${invite.url}`);
+            change.doc.ref.set({
+              channel: {
+                id: channel.id,
+                invite: invite.url
+              }
+            }, { merge: true });
+          })
+          .catch(console.error);
+        })
         .catch(console.error);
     }
     if (change.type === 'modified') {
@@ -56,11 +70,15 @@ doc.onSnapshot(docSnapshot => {
     }
     if (change.type === 'removed') {
       console.log('Removed Lobby: ', change.doc.data());
+
+      const channelId = change.doc.data().channel.id;
+      client.channels.fetch(channelId)
+        .then(channel => {
+          channel.delete();
+        })
+        .catch(console.error);
     }
   });
-
-  console.log(`Received doc snapshot:`,  docSnapshot);
-  // ...
 }, err => {
   console.log(`Encountered error: ${err}`);
 });
