@@ -28,7 +28,6 @@ client.login(require("./secrets/discord.json").token);
 var inviteCache = {};
 
 const guilds = client.guilds;
-// .get('821785285423136788');
 let guild = null;
 guilds.fetch(discordGuildId).then(guildParam => {
   console.log(guildParam.name);
@@ -63,7 +62,6 @@ client.on('guildMemberAdd', member => {
 
     fbDiscordDoc.where('discordInvite', '==', invite.url).get().then(snapshot => {
       if (snapshot.empty) {
-        console.log('No matching documents.');
         return;
       }  
       snapshot.forEach(doc => {
@@ -81,13 +79,6 @@ const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'text/plain');
   res.end('Hello World');
 });
-
-setInterval(() => {
-  //console.log(JSON.stringify(inviteCache));
-  if (inviteCache !== undefined) {
-    console.log("LALALALA", Object.values(inviteCache)[0])
-  }
-}, 60000);
 
 server.listen(port, hostname, () => {
   console.log(`Server running at http://${hostname}:${port}/`);
@@ -110,10 +101,8 @@ fbDiscordDoc.onSnapshot(docSnapshot => {
 
     }
     if (change.type === 'modified') {
-      console.log('Modified Discord Entry: ', change.doc.data());
     }
     if (change.type === 'removed') {
-      console.log('Removed Discord Entry: ', change.doc.data());
     }
   })}, err => {
     console.log(`Encountered error: ${err}`);
@@ -121,11 +110,30 @@ fbDiscordDoc.onSnapshot(docSnapshot => {
 
   const channelCache = {};
 
-  const addToChannel = (channelId, userId) => {
+  const addToChannel = (channelId, userId, channel) => {
     const userExists = channelCache[channelId][userId];
-    if (!userExists) {
-      channelCache[channelId][userId] = true;
-      
+    if (userExists === undefined) {
+      fbDiscordDoc.doc(userId).get().then(doc => {
+        if (!doc?.exists) {
+          return;
+        }
+        const user = doc.data();
+        const discordId = user?.discordUserId;
+        channelCache[channelId][userId] = discordId || 0;
+        if (!discordId) {
+          return;
+        }
+        guild.members.fetch(discordId).then(user => {
+            user.voice.setChannel(channel);
+        }).catch();
+      }).catch();
+    }
+  }
+
+  const removeFromChannel = (userId, channelId, channel) => {
+    delete channelCache[channelId][userId];
+    if (Object.keys(channelCache[channelId]).length === 0) {
+      channel.delete();
     }
   }
 
@@ -133,7 +141,6 @@ loobyDoc.onSnapshot(docSnapshot => {
   docSnapshot.docChanges().forEach(change => {
     if (guild === null) return;
     if (change.type === 'added') {
-      console.log('New Lobby: ', change.doc.data());
       const lobbyData = change.doc.data()
       guild.channels.create(`${lobbyData?.host?.name}'s Lobby`, { reason: 'Players', type: "voice" })
         .then(channel => {
@@ -145,24 +152,45 @@ loobyDoc.onSnapshot(docSnapshot => {
           channelCache[channel.id] = {};
           const players = Object.keys(lobbyData.players);
           players?.forEach( id => {
-            channelCache[channel.id][id] = { moved: false };
+            addToChannel(channel?.id, id, channel);
           }); 
 
         })
         .catch(console.error);
     }
     if (change.type === 'modified') {
-      console.log('Modified Lobby: ', change.doc.data());
-    }
-    if (change.type === 'removed') {
-      console.log('Removed Lobby: ', change.doc.data());
-
-      const channelId = change.doc.data().channel.id;
+      const lobbyData = change.doc.data()
+      const channelId = change.doc.data().channel?.id;
       client.channels.fetch(channelId)
         .then(channel => {
-          channel.delete();
+          const cachedPlayers = Object.keys(channelCache[channelId]);
+          const players = Object.keys(lobbyData.players);
+          const disconnectedPlayer = cachedPlayers.filter(player => !players.includes(player));
+          disconnectedPlayer.forEach(id => { removeFromChannel(id, channelId, channel); });
+          players?.forEach( id => {
+            addToChannel(channelId, id, channel);
+          }); 
         })
         .catch(console.error);
+    }
+    if (change.type === 'removed') {
+      const channelId = change.doc.data().channel.id;
+      const userIds = Object.keys(channelCache[channelId]);
+      client.channels.fetch(channelId)
+        .then(channel => {
+          userIds.forEach(id => {
+            const discordId = channelCache[channelId][id];
+            console.log(discordId);
+            if (discordId === 0) {
+              removeFromChannel(id, channelId, channel);
+              return;
+            }
+            guild.members.fetch(discordId).then(user => {
+              user.voice.setChannel(lobbyChannel).then(() => removeFromChannel(id, channelId, channel)).catch(console.error);
+            }).catch(console.error);
+          });
+         })
+      .catch(console.error);
     }
   });
 }, err => {
