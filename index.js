@@ -25,24 +25,34 @@ client.once('ready', () => {
 
 client.login(require("./secrets/discord.json").token);
 
+//var inviteCache = { [discordGuildId]: {} };
 var inviteCache = {};
+console.log("RESET");
 
 const guilds = client.guilds;
 let guild = null;
 guilds.fetch(discordGuildId).then(guildParam => {
   console.log(guildParam.name);
   guild = guildParam;
+  getLobby();
+  console.log('Guild set');
   guild.fetchInvites().then(guildInvites => {
+    console.log("Invites Fetched");
     inviteCache[guild.id] = guildInvites;
   });
 })
 .catch(console.error);
 
 let lobbyChannel = null;
-client.channels.fetch(discordLobbyId).then(lobbyChan => {
-  lobbyChannel = lobbyChan;
-})
-.catch(console.error);;
+const getLobby = () => {
+  client.channels.fetch(discordLobbyId).then(lobbyChan => {
+    console.log(lobbyChan.name);
+    lobbyChannel = lobbyChan;
+    console.log("lobby set");
+  })
+  .catch(console.error);
+}
+
 
 client.on('guildMemberAdd', member => {
   // To compare, we need to load the current invite list.
@@ -51,8 +61,20 @@ client.on('guildMemberAdd', member => {
     const ei = inviteCache[member.guild.id];
     // Update the cached invites for the guild.
     inviteCache[member.guild.id] = guildInvites;
+
+    console.log("OLD INVITES", ei);
+    console.log("NEW GUILD INVITES", guildInvites);
+
     // Look through the invites, find the one for which the uses went up.
-    const invite = guildInvites.find(i => ei.get(i.code).uses < i.uses);
+    const invite = guildInvites.find(i => {
+      const oldInvite = ei[i.code];
+      const oldUses = oldInvite?.uses 
+      console.log("oldUses", oldUses);
+      console.log("newUses", i.uses)
+      return oldUses < i.uses;
+    });
+
+    console.log("LALALALA", invite);
 
     if (invite === undefined) {
       return;
@@ -86,13 +108,16 @@ server.listen(port, hostname, () => {
 
 fbDiscordDoc.onSnapshot(docSnapshot => {
   docSnapshot.docChanges().forEach(change => {
-    if (guild === null) return;
+    if (guild === null || lobbyChannel === null) {
+      console.error("Guild or Lobby is null");
+      return;
+    }
     if (change.type === 'added') {
       console.log('Added Discord Entry: ', change.doc.data());
-      lobbyChannel.createInvite()
+      lobbyChannel.createInvite({ unique: true })
           .then(invite => {
             console.log(`Created an invite with a code of ${invite.code} and url ${invite.url}`);
-            inviteCache[guild.id][invite.code] = invite;
+            inviteCache[guild.id][`${invite?.code}`] = invite;
             change.doc.ref.set({
               discordInvite: invite.url
             }, { merge: true });
